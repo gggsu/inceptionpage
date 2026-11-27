@@ -1,5 +1,12 @@
 ---
 import InceptionTotem from './InceptionTotem.jsx';
+
+// Fuentes de la palabra rotativa del título (sólo se descargan cuando se usan)
+import '@fontsource/instrument-serif/400-italic.css';
+import '@fontsource/bebas-neue/400.css';
+import '@fontsource-variable/playfair-display/wght-italic.css';
+import '@fontsource/space-mono/700.css';
+import '@fontsource-variable/fraunces/wght-italic.css';
 ---
 
 <section
@@ -16,9 +23,16 @@ import InceptionTotem from './InceptionTotem.jsx';
   <div class="inception-container relative z-10">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
       <!-- Orden de lectura 1º: Slogan | 2º: Línea de apoyo | 3º: CTA -->
-      <div class="lg:col-span-7 flex flex-col items-start">
-        <h1 class="type-display max-w-[13ch] mb-6" data-hero-reveal>
-          Sistemas y webs para tu <span style="color: var(--accent);">operación</span>.
+      <div class="hero-copy lg:col-span-7 flex flex-col items-start">
+        <h1 class="type-display hero-title mb-6">
+          <!-- Texto real para lectores de pantalla y buscadores -->
+          <span class="sr-only">Sistemas y webs para tu operación.</span>
+
+          <!-- Capa visual: dos renglones de alto fijo que se escriben letra por letra -->
+          <span class="hero-type" aria-hidden="true" data-hero-type>
+            <span class="hero-line"><span data-type-line1></span><span class="hero-caret" data-type-caret></span></span>
+            <span class="hero-line"><span data-type-line2></span><span class="hero-word" data-type-word></span><span data-type-end></span></span>
+          </span>
         </h1>
 
         <p class="type-lead max-w-[44ch] mb-10" data-hero-reveal>
@@ -55,3 +69,169 @@ import InceptionTotem from './InceptionTotem.jsx';
     </div>
   </div>
 </section>
+
+<style>
+  /* Tamaño acotado para que "PARA TU + palabra." entre siempre en un renglón */
+  /* La columna de texto es un contenedor: el título se dimensiona según su ancho real */
+  .hero-copy {
+    container-type: inline-size;
+  }
+
+  /* El renglón más ancho ("PARA TU OPERACIÓN.") mide ~9.3em → 10.2cqi lo deja dentro con margen */
+  .hero-title {
+    font-size: min(var(--text-display), 10.2cqi);
+  }
+
+  /* Cada renglón tiene alto fijo: el cambio de fuente no mueve nada de lo que hay debajo */
+  .hero-line {
+    display: block;
+    height: 1.02em;
+    white-space: nowrap;
+  }
+
+  /* line-height: 0 → la palabra no aporta altura al renglón, así las métricas distintas de cada
+     fuente (ascendente/descendente) no desplazan la línea base de "PARA TU" al cambiar de palabra */
+  .hero-word {
+    color: var(--accent);
+    display: inline-block;
+    line-height: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  /* Cursor de ancho cero: no altera el corte de líneas respecto al fantasma */
+  .hero-caret {
+    position: relative;
+    display: inline-block;
+    width: 0;
+    height: 0.82em;
+    vertical-align: baseline;
+  }
+
+  .hero-caret::after {
+    content: '';
+    position: absolute;
+    left: 0.05em;
+    bottom: -0.04em;
+    width: 0.07em;
+    height: 0.86em;
+    background: var(--accent);
+    border-radius: 1px;
+    animation: heroCaretBlink 1s steps(1, end) infinite;
+  }
+
+  .hero-caret.is-typing::after {
+    animation: none;
+    opacity: 1;
+  }
+
+  @keyframes heroCaretBlink {
+    0%, 50% { opacity: 1; }
+    50.01%, 100% { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-caret {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  // Cada palabra rotativa con su propia fuente. `scale` iguala la altura de mayúsculas a la de
+  // Space Grotesk (medida: 0.70em); se calcula como altura_referencia / altura_de_la_fuente.
+  const WORDS = [
+    { text: 'operación', family: 'var(--font-display)', style: 'normal', weight: 700, scale: 1, tracking: '-0.03em' },
+    { text: 'negocio', family: "'Instrument Serif', serif", style: 'italic', weight: 400, scale: 0.971, tracking: '-0.01em' },
+    { text: 'empresa', family: "'Bebas Neue', sans-serif", style: 'normal', weight: 400, scale: 1, tracking: '0em' },
+    { text: 'marca', family: "'Playfair Display Variable', serif", style: 'italic', weight: 700, scale: 0.943, tracking: '-0.01em' },
+    { text: 'proyecto', family: "'Space Mono', monospace", style: 'normal', weight: 700, scale: 1, tracking: '-0.07em' },
+    { text: 'comercio', family: "'Fraunces Variable', serif", style: 'italic', weight: 600, scale: 0.973, tracking: '-0.02em' },
+  ];
+  const LINE1 = 'Sistemas y webs';
+  const LINE2 = 'para tu ';
+  const END = '.';
+
+  const TYPE_SPEED = 55;      // ms por letra al escribir el título
+  const WORD_TYPE_SPEED = 75; // ms por letra al escribir la palabra destacada
+  const DELETE_SPEED = 40;    // ms por letra al borrar la palabra
+  const HOLD_TIME = 2200;     // ms que la palabra queda visible
+  const START_DELAY = 350;    // ms antes de empezar a escribir
+
+  const root = document.querySelector('[data-hero-type]');
+
+  if (root) {
+    const line1El = root.querySelector('[data-type-line1]');
+    const line2El = root.querySelector('[data-type-line2]');
+    const wordEl = root.querySelector('[data-type-word]');
+    const endEl = root.querySelector('[data-type-end]');
+    const caretEl = root.querySelector('[data-type-caret]');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const setTyping = (on) => caretEl.classList.toggle('is-typing', on);
+    const moveCaretAfter = (el) => el.after(caretEl);
+
+    const fontQuery = (w) => `${w.style} ${w.weight} 1em ${w.family}`;
+
+    // Descarga anticipada de las fuentes para que el cambio no muestre una fuente de reemplazo
+    const fontsReady = new Map(
+      WORDS.slice(1).map((w) => [w, document.fonts.load(fontQuery(w)).catch(() => {})])
+    );
+
+    const applyFont = async (w) => {
+      const ready = fontsReady.get(w);
+      if (ready) await Promise.race([ready, wait(1500)]);
+      wordEl.style.fontFamily = w.family;
+      wordEl.style.fontStyle = w.style;
+      wordEl.style.fontWeight = String(w.weight);
+      wordEl.style.fontSize = `${w.scale}em`;
+      wordEl.style.letterSpacing = w.tracking;
+    };
+
+    const typeInto = async (el, text, speed) => {
+      setTyping(true);
+      for (let i = 1; i <= text.length; i++) {
+        el.textContent = text.slice(0, i);
+        await wait(speed);
+      }
+      setTyping(false);
+    };
+
+    const deleteFrom = async (el, speed) => {
+      setTyping(true);
+      const text = el.textContent;
+      for (let i = text.length - 1; i >= 0; i--) {
+        el.textContent = text.slice(0, i);
+        await wait(speed);
+      }
+      setTyping(false);
+    };
+
+    if (reduceMotion) {
+      line1El.textContent = LINE1;
+      line2El.textContent = LINE2;
+      wordEl.textContent = WORDS[0].text;
+      endEl.textContent = END;
+    } else {
+      (async () => {
+        await wait(START_DELAY);
+        await typeInto(line1El, LINE1, TYPE_SPEED);
+        moveCaretAfter(line2El);
+        await typeInto(line2El, LINE2, TYPE_SPEED);
+        moveCaretAfter(wordEl);
+        await typeInto(wordEl, WORDS[0].text, WORD_TYPE_SPEED);
+        endEl.textContent = END;
+
+        let index = 0;
+        while (true) {
+          await wait(HOLD_TIME);
+          await deleteFrom(wordEl, DELETE_SPEED);
+          index = (index + 1) % WORDS.length;
+          await applyFont(WORDS[index]);
+          await wait(250);
+          await typeInto(wordEl, WORDS[index].text, WORD_TYPE_SPEED);
+        }
+      })();
+    }
+  }
+</script>
